@@ -295,7 +295,6 @@ require(["esri/map",
      disableDraw = true;
      map.graphics.clear();
      var goodCut = cutGeoms(selectedGraphic.geometry, cutter.geometry, evt.mapPoint, orchardLayer);
-      console.log("orchard layer: ", orchardLayer);
       if(goodCut){
           //Add cut graphics to map and remove original selected graphic
           orchardLayer.add(cutGraphic1);
@@ -369,7 +368,6 @@ require(["esri/map",
   on(dom.byId("mergeBtn"), "click", function(){
       clicks = 0;
      on(orchardLayer, "click", function(evt){
-         console.log("orchard event: ", evt);
         mergeGeoms(originalGraphicSelection.geometry, evt.graphic.geometry); 
      }); 
   });
