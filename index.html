@@ -162,18 +162,18 @@ require(["esri/map",
 
   //Initialize drawing capabilities with click of cut button
   on(cutBtn, "click", function(){
-    if(!isSelected){
-        alert("Please select a feature to cut first.");
-        return;
+    if (!isSelected) {
+      alert("Please select a feature to cut first.");
+      return;
     }
 
     dom.byId("instructions").innerHTML = drawInstructions;
 
-    setBtn();  //change style of cut button to inform user it is activated
+    setBtn();
 
     clicks = 0;
-    cutter = null;  //reset cutter to null each time button is clicked
-    drawEnabled = true;  //enable drawing
+    cutter = null;
+    drawEnabled = true;
     map.disableMapNavigation();  //disable map navigation while drawing
 
     //After button is clicked watch for map click events
