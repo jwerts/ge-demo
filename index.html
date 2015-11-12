@@ -81,7 +81,7 @@ require(["esri/map",
          "dojo/_base/array",
          "dojo/dom",
          "dojo/domReady!"
-], function(Map, Graphic, graphicsUtils, Extent, geometryEngine, Line, Point, SpatialReference, SimpleFillSymbol, SimpleLineSymbol, TextSymbol, Font, Color, SimpleRenderer, FeatureLayer, GraphicsLayer, routes, on, array, dom) {
+], function(Map, Graphic, graphicsUtils, Extent, geometryEngine, Polyline, Point, SpatialReference, SimpleFillSymbol, SimpleLineSymbol, TextSymbol, Font, Color, SimpleRenderer, FeatureLayer, GraphicsLayer, routes, on, array, dom) {
 
   //xmin, ymin, xmax, ymax
   var initExtent = new Extent(-122.412636, 37.802260, -122.408795, 37.805083, new SpatialReference({wkid:4326}));
@@ -130,23 +130,18 @@ require(["esri/map",
   map.addLayer(selectionLayer);
   map.addLayer(displayLabels);
 
-  //Calculates the area of the input geometry using GeometryEngine.geodesicArea() and converts it to a string
-  function calcArea(geom){
-      return (Math.round(geometryEngine.geodesicArea(geom, 109402)*100) / 100) + " acres"; //area in acres
-  }
-
   //Define cutting line object
   var cutter = null;
   //Function for creating drawing line
-  function drawLine(pt1, pt2){
-          var pt1Cor = [pt1.x, pt1.y];
-          var pt2Cor = [pt2.x, pt2.y];
-          var lineJSON = {
-              paths: [[pt1Cor, pt2Cor]],
-              spatialReference: pt1.spatialReference
-          };
-          var polyLine = new Line(lineJSON);
-          return polyLine;
+  function drawPolyline(pt1, pt2){
+    var pt1Cor = [pt1.x, pt1.y];
+    var pt2Cor = [pt2.x, pt2.y];
+    var lineJSON = {
+        paths: [[pt1Cor, pt2Cor]],
+        spatialReference: pt1.spatialReference
+    };
+    var polyLine = new Polyline(lineJSON);
+    return polyPolyline;
   }
 
   var isSelected = false;
@@ -155,23 +150,23 @@ require(["esri/map",
   //Select features on click event
   function selectFeature(evt){
 
-      if(!disableDraw){
-          return;
-      }
+    if(!disableDraw){
+        return;
+    }
 
-      selectionLayer.clear();
+    selectionLayer.clear();
 
-      originalGraphicSelection = evt.graphic;
-      selectedGraphic = new Graphic(evt.graphic.geometry, selectionSym);
+    originalGraphicSelection = evt.graphic;
+    selectedGraphic = new Graphic(evt.graphic.geometry, selectionSym);
 
-      selectionLayer.add(selectedGraphic);
-      isSelected = true;
+    selectionLayer.add(selectedGraphic);
+    isSelected = true;
 
-      evt.stopPropagation();  //stop click event from bubbling to map click handlers
+    evt.stopPropagation();  //stop click event from bubbling to map click handlers
 
-      dom.byId("instructions").innerHTML = clickInstructions;
+    dom.byId("instructions").innerHTML = clickInstructions;
 
-      return selectedGraphic;
+    return selectedGraphic;
   }
 
   //Manage map clicking for line drawing purposes
@@ -183,175 +178,169 @@ require(["esri/map",
 
   //Initialize drawing capabilities with click of cut button
   on(cutBtn, "click", function(){
-      if(!isSelected){
-          alert("Please select a feature to cut first.");
-          return;
+    if(!isSelected){
+        alert("Please select a feature to cut first.");
+        return;
+    }
+
+    dom.byId("instructions").innerHTML = drawInstructions;
+
+    setBtn();  //change style of cut button to inform user it is activated
+
+    clicks = 0;
+    cutter = null;  //reset cutter to null each time button is clicked
+    disableDraw = false;  //enable drawing
+    map.disableMapNavigation();  //disable map navigation while drawing
+
+  //After button is clicked watch for map click events
+  on(map, "click", function(evt){
+      clicks++;  //increment map clicking var for line construction purposes
+
+      if (clicks === 1) {
+        initClick = evt.mapPoint;  //set initial click to global var for testing purposes
+        if (selectedGraphic) {
+          var initClickOutsideSelection = geometryEngine.disjoint(selectedGraphic.geometry, initClick);
+        }
+        if (!initClickOutsideSelection){
+          //Don't allow for cutting to being inside of selected feature
+          alert("Start cutting line outside of selected feature.");
+          dom.byId("instructions").innerHTML = clickInstructions;
+          resetBtn();
+        } else {
+          //Create line and add to map
+          var lineGeom = drawPolyline(evt.mapPoint, evt.mapPoint);
+          cutter = new Graphic(lineGeom, cutterSym);
+          map.graphics.add(cutter);
+        }
+      }
+      if(clicks > 1) {
+        //Add additional line paths for each click (can be "buggy" at times) don't click too fast
+        cutter.geometry.addPath([cutter.geometry.paths[cutter.geometry.paths.length-1][1], evt.mapPoint]);
+        map.graphics.redraw();
       }
 
-      dom.byId("instructions").innerHTML = drawInstructions;
+      //evt.stopPropagation();
 
-      setBtn();  //change style of cut button to inform user it is activated
-
-      clicks = 0;
-      cutter = null;  //reset cutter to null each time button is clicked
-      disableDraw = false;  //enable drawing
-      map.disableMapNavigation();  //disable map navigation while drawing
-
-    //After button is clicked watch for map click events
-    on(map, "click", function(evt){
-        clicks++;  //increment map clicking var for line construction purposes
-
-        if(clicks === 1){
-            initClick = evt.mapPoint;  //set initial click to global var for testing purposes
-            if(selectedGraphic){
-               var initClickOutsideSelection = geometryEngine.disjoint(selectedGraphic.geometry, initClick);
-            }
-            if(!initClickOutsideSelection){
-                //Don't allow for cutting to being inside of selected feature
-                alert("Start cutting line outside of selected feature.");
-                dom.byId("instructions").innerHTML = clickInstructions;
-                resetBtn();
-            }
-            else{
-                //Create line and add to map
-                var lineGeom = drawLine(evt.mapPoint, evt.mapPoint);
-                cutter = new Graphic(lineGeom, cutterSym);
-                map.graphics.add(cutter);
-            }
-        }
-        if(clicks > 1){
-          //Add additional line paths for each click (can be "buggy" at times) don't click too fast
-          cutter.geometry.addPath([cutter.geometry.paths[cutter.geometry.paths.length-1][1], evt.mapPoint]);
-          map.graphics.redraw();
-        }
-
-        //evt.stopPropagation();
-
-        return;
+      return;
     });
   });
 
   //When map is clicked outside of selected feature, clear selection
-  on(map, "click", function(evt){
-      if(isSelected && disableDraw){
-          var isFeatureClicked = geometryEngine.intersects(originalGraphicSelection.geometry, evt.mapPoint);
-          if(!isFeatureClicked){
-              clearSelectedFeatures();
-              routesFeatureLayer.add(originalGraphicSelection);
-          }
-          else{
-              return;
-          }
+  on(map, "click", function(evt) {
+    if(isSelected && disableDraw) {
+      var isFeatureClicked = geometryEngine.intersects(originalGraphicSelection.geometry, evt.mapPoint);
+      if(!isFeatureClicked) {
+        clearSelectedFeatures();
+        routesFeatureLayer.add(originalGraphicSelection);
       }
-      else{
-          return;
+      else {
+        return;
       }
+    }
+    else {
+      return;
+    }
  });
 
  //For managing cleared selections
  function clearSelectedFeatures(){
-      selectionLayer.clear();
-      isSelected = false;
-      clicks = 0;
-      cutter = null;
-      selectedGraphic = null;
+    selectionLayer.clear();
+    isSelected = false;
+    clicks = 0;
+    cutter = null;
+    selectedGraphic = null;
  }
 
   //After starting to draw a line, continue drawing with cursor movement
-  on(map, "mouse-move", function(evt){
-    if(cutter && !disableDraw){
-        cutter.geometry.setPoint(cutter.geometry.paths.length-1, 1, evt.mapPoint);
-        map.graphics.redraw();
-        cutGeoms(selectedGraphic.geometry, cutter.geometry, evt.mapPoint, selectionLayer);
-    }
-    else{
-        return;
+  on (map, "mouse-move", function(evt) {
+    if (cutter && !disableDraw) {
+      cutter.geometry.setPoint(cutter.geometry.paths.length-1, 1, evt.mapPoint);
+      map.graphics.redraw();
+      cutGeoms(selectedGraphic.geometry, cutter.geometry, evt.mapPoint, selectionLayer);
+    } else {
+      return;
     }
   });
 
  //Set button style to "activated" style
- function setBtn(){
+  function setBtn(){
     cutBtn.style.backgroundColor = "black";
     cutBtn.style.color = "white";
- }
+  }
 
  //Set button style to initial style
- function resetBtn(){
+  function resetBtn(){
     cutBtn.style.backgroundColor = "white";
     cutBtn.style.color = "black";
- }
+  }
 
- var disableDraw = true;
+  var disableDraw = true;
 
- //Finish drawing line on double-click event
- on(map, "dbl-click", function(evt){
-     map.enableMapNavigation();
+  //Finish drawing line on double-click event
+  on(map, "dbl-click", function(evt){
+    map.enableMapNavigation();
 
-     disableDraw = true;
-     map.graphics.clear();
-     var goodCut = cutGeoms(selectedGraphic.geometry, cutter.geometry, evt.mapPoint, routesFeatureLayer);
-      if(goodCut){
-          //Add cut graphics to map and remove original selected graphic
-          routesFeatureLayer.add(cutGraphic1);
-          routesFeatureLayer.add(cutGraphic2);
-          routesFeatureLayer.add(cutGraphic3);
-          routesFeatureLayer.remove(originalGraphicSelection);
+    disableDraw = true;
+    map.graphics.clear();
+    var goodCut = cutGeoms(selectedGraphic.geometry, cutter.geometry, evt.mapPoint, routesFeatureLayer);
+    if (goodCut) {
+        //Add cut graphics to map and remove original selected graphic
+        routesFeatureLayer.add(cutGraphic1);
+        routesFeatureLayer.add(cutGraphic2);
+        routesFeatureLayer.add(cutGraphic3);
+        routesFeatureLayer.remove(originalGraphicSelection);
 
-         cutIterations = 0;
-         clearSelectedFeatures();
+       cutIterations = 0;
+       clearSelectedFeatures();
 
-      }
-      else{
-          clearSelectedFeatures();
-          disableDraw = true;
-      }
+    } else {
+      clearSelectedFeatures();
+      disableDraw = true;
+    }
+    resetBtn();
+    dom.byId("instructions").innerHTML = initInstructions;
 
-      resetBtn();
-      dom.byId("instructions").innerHTML = initInstructions;
-
-      var orchardGeoms = graphicsUtils.getGeometries(routesFeatureLayer.graphics);
-      //labelAreas(orchardGeoms);
-
+    var orchardGeoms = graphicsUtils.getGeometries(routesFeatureLayer.graphics);
+    //labelAreas(orchardGeoms);
   });
 
   //cut the polygon with the line drawn on map
   var cutIterations = 0;
   function cutGeoms(poly, cutLine, endPoint, lyr){
-      cutIterations++;
-      routesFeatureLayer.disableMouseEvents();
-      var crossTest = geometryEngine.crosses(cutLine, poly);
-      var disjointTest = geometryEngine.disjoint(poly, endPoint);
-      //Don't attempt cut if line doesn't properly cross selected geometry
-      if(crossTest && disjointTest){
-        var cutPolys = geometryEngine.cut(poly, cutLine);
-        if(lyr === selectionLayer){
-            lyr.clear();
-            //Define final cut graphics and add temporary ones to map as mouse moves
-            cutGraphic1 = new Graphic(cutPolys[0], leftCutSym);
-            cutGraphic2 = new Graphic(cutPolys[1], rightCutSym);
-            cutGraphic3 = new Graphic(cutPolys[2], unCutSym);
+    cutIterations++;
+    routesFeatureLayer.disableMouseEvents();
+    var crossTest = geometryEngine.crosses(cutLine, poly);
+    var disjointTest = geometryEngine.disjoint(poly, endPoint);
+    //Don't attempt cut if line doesn't properly cross selected geometry
+    if(crossTest && disjointTest){
+      var cutPolys = geometryEngine.cut(poly, cutLine);
+      if(lyr === selectionLayer){
+        lyr.clear();
+        //Define final cut graphics and add temporary ones to map as mouse moves
+        cutGraphic1 = new Graphic(cutPolys[0], leftCutSym);
+        cutGraphic2 = new Graphic(cutPolys[1], rightCutSym);
+        cutGraphic3 = new Graphic(cutPolys[2], unCutSym);
 
-            lyr.add(new Graphic(cutPolys[0], leftCutSym));
-            lyr.add(new Graphic(cutPolys[1], rightCutSym));
-            lyr.add(new Graphic(cutPolys[2], unCutSym));
+        lyr.add(new Graphic(cutPolys[0], leftCutSym));
+        lyr.add(new Graphic(cutPolys[1], rightCutSym));
+        lyr.add(new Graphic(cutPolys[2], unCutSym));
 
-            //Create dashed offset polygon symbol and add to map for visualization purposes
-            var offsetPolys = offsetGeoms(cutPolys);
-            lyr.add(new Graphic(offsetPolys[0], offsetSym));
-            lyr.add(new Graphic(offsetPolys[1], offsetSym));
-            lyr.add(new Graphic(offsetPolys[2], offsetSym));
-        }
-        if(lyr === routesFeatureLayer){
-            //For finishing the line
-            selectionLayer.clear();
-            routesFeatureLayer.enableMouseEvents();
-        }
-        return true;
+        //Create dashed offset polygon symbol and add to map for visualization purposes
+        var offsetPolys = offsetGeoms(cutPolys);
+        lyr.add(new Graphic(offsetPolys[0], offsetSym));
+        lyr.add(new Graphic(offsetPolys[1], offsetSym));
+        lyr.add(new Graphic(offsetPolys[2], offsetSym));
       }
-      else{
-          routesFeatureLayer.enableMouseEvents();
-          return false;
+      if(lyr === routesFeatureLayer){
+        //For finishing the line
+        selectionLayer.clear();
+        routesFeatureLayer.enableMouseEvents();
       }
+      return true;
+    } else {
+      routesFeatureLayer.enableMouseEvents();
+      return false;
+    }
   }
 
   //Function for offseting geometries by 10 feet
