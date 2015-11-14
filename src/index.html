@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta name="viewport" content="initial-scale=1, maximum-scale=1,user-scalable=no"/>
+<title>Route Edit Proto</title>
+<link rel="stylesheet" href="http://jsdev.arcgis.com/3.14/esri/css/esri.css">
+
+<style>
+html, body, #map {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+#results{
+  bottom: 20px;
+  left: 20px;
+  width: 300px;
+  height: 90px;
+}
+
+#cutBtn{
+  background-color: white;
+  color: black;
+}
+
+#title{
+  top: 20px;
+  width: 50%;
+  height: 50px;;
+  padding-top: 5px;
+  text-align: center;
+  margin: 0 0 0 25%;
+}
+.mainStyle{
+  position: absolute;
+  z-index: 99;
+  background-color: white;
+  color: darkblue;
+  border-radius: 8px;
+  border-width: medium;
+  border-color: cornflowerblue;
+  padding: 15px;
+  opacity: 0.75;
+}
+</style>
+
+<script>
+var dojoConfig = {
+  paths: {
+    app: location.pathname.replace(/\/[^/]+$/, "") + "js",
+    data: location.pathname.replace(/\/[^/]+$/, "") + "js/data"
+  }
+};
+</script>
+
+<script src="js/lib/bower_components/terraformer/terraformer.min.js"></script>
+<script src="js/lib/bower_components/terraformer-arcgis-parser/terraformer-arcgis-parser.min.js"></script>
+<script src="js/lib/bower_components/turf/turf.min.js"></script>
+<script src="//js.arcgis.com/3.14/"></script>
+
+<script>
+var map;
+
+require(
+  [
+    "esri/map",
+    "esri/geometry/Extent",
+    "esri/SpatialReference",
+    "app/RouteEdit",
+    "dojo/dom",
+    "dojo/on",
+
+    "dojo/domReady!"
+  ], function(Map, Extent, SpatialReference, RouteEdit, dom, on) {
+
+  //xmin, ymin, xmax, ymax
+  var initExtent = new Extent(-122.412636, 37.802260, -122.408795, 37.805083, new SpatialReference({wkid:4326}));
+
+  map = new Map("map", {
+    basemap: "topo",
+    extent: initExtent
+  });
+
+  //Instructions for using the app. Will update based on user behavior
+  var drawInstructions = "Click outside the selected feature to begin drawing cutting line. Double-click to finish line and make final cut.";
+  var initInstructions = "Select a feature by clicking on it.";
+  var clickInstructions = "Choose editing operation below.";
+
+  var routeEdit = new RouteEdit(map);
+  routeEdit.enable();
+
+  routeEdit.on('graphic-selected', function(e) {
+    dom.byId("instructions").innerHTML = drawInstructions;
+  });
+
+  on(dom.byId("clearButton"), 'click', function(e) {
+    routeEdit.clear();
+    routeEdit.enable();
+  });
+});
+
+  //dom.byId("instructions").innerHTML = clickInstructions;
+/**
+User clicks first point
+on mouse move - constant invisible cut line - cutting "right" and keeping "left" and untouched portion
+User clicks anywhere on map to cut OR
+clicks a second point on line and everything in between is cut.
+Q: How to determine what's "in between" the 2 points.
+*/
+</script>
+</head>
+
+<body>
+  <div id="map">
+    <div class="mainStyle" id="results">
+      <span id="instructions">Select a feature by clicking on it.</span><br><br>
+      <button type="button" id="clearButton">Clear</button>
+  </div>
+</div>
+</body>
+</html>

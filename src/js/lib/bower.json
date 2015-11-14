@@ -1,0 +1,26 @@
+{
+  "name": "route-edit",
+  "homepage": "https://github.com/jwerts/ge-demo",
+  "authors": [
+    "Josh Werts <joshwerts@gmail.com>"
+  ],
+  "description": "",
+  "main": "index.html",
+  "moduleType": [
+    "amd"
+  ],
+  "license": "All Rights Reserved",
+  "private": true,
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ],
+  "dependencies": {
+    "turf": "~2.0.2",
+    "terraformer": "~1.0.4",
+    "terraformer-arcgis-parser": "~1.0.4"
+  }
+}
