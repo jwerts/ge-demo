@@ -14,41 +14,28 @@ define(
     "dojo/_base/declare",
     "dojo/_base/lang",
     "dojo/Evented",
-    "esri/map",
     "esri/graphic",
     "esri/graphicsUtils",
-    "esri/geometry/Extent",
     "esri/geometry/geometryEngine",
     "esri/geometry/Polyline",
-    "esri/geometry/Point",
     "esri/SpatialReference",
-
-    "esri/symbols/SimpleFillSymbol",
     "esri/symbols/SimpleLineSymbol",
-    "esri/symbols/TextSymbol",
-    "esri/symbols/Font",
     "esri/Color",
     "esri/renderers/SimpleRenderer",
-
-    "esri/layers/FeatureLayer",
     "esri/layers/GraphicsLayer",
     "data/routes",
     "app/mapStyles",
-
-    "dojo/on",
+    "app/rendererFactory",
     "dojo/_base/array",
     "esri/geometry/webMercatorUtils"
-  ], function(declare, lang, Evented, Map, Graphic, graphicsUtils, Extent, geometryEngine, Polyline, Point,
-              SpatialReference, SimpleFillSymbol, SimpleLineSymbol,
-              TextSymbol, Font, Color, SimpleRenderer, FeatureLayer, GraphicsLayer,
-              routes, mapStyles, on, array, webMercatorUtils) {
+  ], function(declare, lang, Evented, Graphic, graphicsUtils,
+              geometryEngine, Polyline,
+              SpatialReference, SimpleLineSymbol,
+              Color, SimpleRenderer, GraphicsLayer,
+              routes, mapStyles, rendererFactory, array, webMercatorUtils) {
     "use strict";
 
-    var LEFT_CUT_SYMBOL = new SimpleLineSymbol(SimpleLineSymbol.STYLE_SOLID, new Color("green"), 5);
-    var RIGHT_CUT_SYMBOL = new SimpleLineSymbol(SimpleLineSymbol.STYLE_SOLID, new Color('rgb(92, 54, 142)'), 5);
-    var UNCUT_SYMBOL = new SimpleLineSymbol(SimpleLineSymbol.STYLE_SOLID, new Color('rgb(198, 0, 196)'), 5);
-
-    var SNAPPING_SYMBOL = mapStyles.lateralVertexSymbol;
+    var SNAPPING_SYMBOL = mapStyles.cutPointSymbol;
 
     return declare(Evented, {
       constructor: function(map) {
@@ -56,10 +43,8 @@ define(
         d_map = map;
 
         //Layer symbology
-        var routesym = new SimpleLineSymbol(SimpleLineSymbol.STYLE_SOLID, new Color("blue"), 3);
-        var selectionSym = new SimpleLineSymbol(SimpleLineSymbol.STYLE_SOLID, new Color("black"), 5);
-        var cutterSym = new SimpleLineSymbol(SimpleLineSymbol.STYLE_DASH, new Color("red"), 2);
-
+        var routesym = new SimpleLineSymbol(SimpleLineSymbol.STYLE_SOLID, new Color("blue"), 5);
+        var selectionSym = new SimpleLineSymbol(SimpleLineSymbol.STYLE_SOLID, new Color("red"), 7);
         var renderer = new SimpleRenderer(routesym);
 
         //Get FeatureLayer created from FeatureCollection stored on the client through data/routes
@@ -67,10 +52,6 @@ define(
         this._routesFeatureLayer.setRenderer(renderer);
         this.map.addLayer(this._routesFeatureLayer);
         d_routeFeatureLayer = this._routesFeatureLayer;
-
-        this._cutterGraphicsLayer = new GraphicsLayer();
-        this._cutterGraphicsLayer.setRenderer(new SimpleRenderer(cutterSym));
-        this.map.addLayer(this._cutterGraphicsLayer);
 
         //Create selection layer to display selection symbol
         this._selectionLayer = new GraphicsLayer();
@@ -122,9 +103,7 @@ define(
         this._cutLine = null;
         this._cutLineStartPoint = null;
 
-        this._cutterGraphicsLayer.clear();
         this._selectionLayer.clear();
-        this._cutterGraphicsLayer.clear();
         this._cutPointGraphicsLayer.clear();
         this._explodedPolylineLayer.clear();
       },
@@ -151,15 +130,13 @@ define(
           this._explodedPolylineLayer.add(graphic);
           ids.push(i);
         }
-        this._explodedPolylineLayer.setRenderer(mapStyles.rampedColorLineRenderer('pathIndex', ids, 5));
+        //this._explodedPolylineLayer.setRenderer(rendererFactory.rampedColorLineRenderer('pathIndex', ids, 7));
+        this._explodedPolylineLayer.setRenderer(rendererFactory.randomColorLineRenderer('pathIndex', ids, 7));
         this._explodedPolylineLayer.show();
         this._explodedPolylineLayer.redraw();
         this._addExplodedPolylineClickHandler();
       },
       _onExplodedPolylineClicked: function(e) {
-        //this._explodedPolylineLayer.setVisibility(false);
-        //this._explodedPolylineLayer.redraw();
-
         this._selectedGraphic = new Graphic(e.graphic.toJson());
         this._selectionLayer.add(this._selectedGraphic);
         this._selectionLayer.redraw();
@@ -178,50 +155,40 @@ define(
         this._snapAndCut(e.mapPoint);
       },
       _snapAndCut: function(mapPoint) {
-        var clickPoint = webMercatorUtils.webMercatorToGeographic(mapPoint);
         this._mapClickCount++;
-        var snapObj = geometryEngine.nearestCoordinate(this._selectedGraphic.geometry, clickPoint);
-        var snapPoint = snapObj.coordinate;
-        console.log("distance", snapObj.distance);
-        this._cutLineStartPoint = snapPoint;
-        this._cutPointGraphicsLayer.add(new Graphic(snapPoint));
+        var clickPoint = webMercatorUtils.webMercatorToGeographic(mapPoint);
 
-        if (this._mapClickCount === 2) {
+        if (this._mapClickCount === 1) {
+          var snapObj = geometryEngine.nearestCoordinate(this._selectedGraphic.geometry, clickPoint);
+          var snapPoint = snapObj.coordinate;
+          this._cutLineStartPoint = snapPoint;
+          this._cutPointGraphicsLayer.add(new Graphic(snapPoint));
+        } else {
           this._removeMapMouseSnapHandler();
           this._removeMouseClickHandler();
+          this._explodedPolylineLayer.clear();
+          this._snappingGraphicsLayer.clear();
+          this._selectionLayer.clear();
 
           var routeGeographic = this._selectedGraphic.geometry;
           var startPoint = this._cutPointGraphicsLayer.graphics[0].geometry;
-          var endPoint = this._cutPointGraphicsLayer.graphics[1].geometry;
+          var endPoint = clickPoint;
           var slicedPolylineSegment = this._cutPolyline(startPoint, endPoint, routeGeographic);
 
-          this._explodedPolylineLayer.clear();
-          this._snappingGraphicsLayer.clear();
-          this._cutPointGraphicsLayer.clear();
-
-          var editedPolyline = new Polyline(new SpatialReference(4326));
-
-          var originalPolylineGcs = webMercatorUtils.webMercatorToGeographic(this._selectedOriginalGraphic.geometry);
-          for (var i = 0; i < originalPolylineGcs.paths.length; i++) {
-            var oPath = originalPolylineGcs.paths[i];
-            if (i !== this._selectedGraphic.attributes.pathIndex) {
-              editedPolyline.addPath(oPath);
-            }
-          }
-
-          for (var j = 0; j < slicedPolylineSegment.paths.length; j++) {
-            var path = slicedPolylineSegment.paths[j];
-            editedPolyline.addPath(path);
-          }
-          //TODO: fill in attributes
-          var editedRouteGraphic = new Graphic(editedPolyline, null, {});
-
           this._routesFeatureLayer.remove(this._selectedOriginalGraphic);
-          editedRouteGraphic.geometry = webMercatorUtils.geographicToWebMercator(editedRouteGraphic.geometry);
-          this._routesFeatureLayer.add(editedRouteGraphic);
-          this._routesFeatureLayer.redraw();
+          var editedPolyline = this._spliceInCutSegment(this._selectedOriginalGraphic.geometry,
+            this._selectedGraphic.attributes.pathIndex, slicedPolylineSegment);
+          var editedPolylineSections = this._divideEditedPolyline(editedPolyline);
 
-          this._selectionLayer.clear();
+          for (var i = 0; i < editedPolylineSections.length; i++) {
+            var section = editedPolylineSections[i];
+            // TODO: calc attributes from original???
+            var sectionGraphic = new Graphic(webMercatorUtils.geographicToWebMercator(section), null, {});
+            this._routesFeatureLayer.add(sectionGraphic);
+          }
+
+          this._cutPointGraphicsLayer.clear();
+          this._routesFeatureLayer.redraw();
 
           // restart process?
           this.clear();
@@ -229,44 +196,59 @@ define(
         }
       },
       _cutPolyline: function(startPoint, endPoint, polyline) {
-        //var selectedGeographic = webMercatorUtils.webMercatorToGeographic(polyline);
-        var routeGeoJson = Terraformer.ArcGIS.parse(new Graphic(polyline));
-        var startGeoJson = Terraformer.ArcGIS.parse(new Graphic(startPoint));
-        var endGeoJson = Terraformer.ArcGIS.parse(new Graphic(endPoint));
+        // expects all inputs in wgs 84
+        var routeGeoJson = new Terraformer.Feature(Terraformer.ArcGIS.parse(polyline));
+        var startGeoJson = new Terraformer.Feature(Terraformer.ArcGIS.parse(startPoint));
+        var endGeoJson = new Terraformer.Feature(Terraformer.ArcGIS.parse(endPoint));
         var cutter = turf.lineSlice(startGeoJson, endGeoJson, routeGeoJson);
-        var cutterPolyline = new Polyline(new SpatialReference(4326));
-        cutterPolyline.addPath(cutter.geometry.coordinates);
+        var cutterPolyline = new Polyline({
+          spatialReference: new SpatialReference(4326),
+          paths: [cutter.geometry.coordinates]
+        });
         var slicedPolyline = geometryEngine.difference(polyline, cutterPolyline);
         return slicedPolyline;
       },
-      _onMouseMove: function(e) {
-        this._cutLine = this._createPolyline(this._cutLineStartPoint, e.mapPoint);
-        //this._cutLine.addPath([this._cutLine.paths[this._cutLine.paths.length-1][1], clickPoint]);
-        this._cutterGraphicsLayer.clear();
-        this._cutterGraphicsLayer.add(new Graphic(this._cutLine));
-        this._cutPolyline(this._selectedGraphic.geometry);
+      _spliceInCutSegment: function(originalPolyline, cutPathIndex, slicedPolyline) {
+        var editedPolyline = new Polyline(new SpatialReference(4326));
+
+        var originalPolylineGcs = originalPolyline;
+        if (originalPolylineGcs.spatialReference.wkid !== 4326) {
+          originalPolylineGcs = webMercatorUtils.webMercatorToGeographic(originalPolyline);
+        }
+        for (var i = 0; i < originalPolylineGcs.paths.length; i++) {
+          var oPath = originalPolylineGcs.paths[i];
+          if (i !== cutPathIndex) {
+            editedPolyline.addPath(oPath);
+          }
+        }
+
+        for (var j = 0; j < slicedPolyline.paths.length; j++) {
+          var path = slicedPolyline.paths[j];
+          editedPolyline.addPath(path);
+        }
+        return editedPolyline;
+      },
+      _divideEditedPolyline: function(editedPolyline) {
+        var groups = this._groupPolylines(this._explodePolyline(editedPolyline));
+
+        var polylineSegments = [];
+        for (var k = 0; k < groups.length; k++) {
+          var unioned = geometryEngine.union(groups[k]);
+          polylineSegments.push(unioned);
+        }
+        return polylineSegments;
       },
       _onMapMouseSnap: function(e) {
         var mapPointGcs = webMercatorUtils.webMercatorToGeographic(e.mapPoint);
         var snapObj = geometryEngine.nearestCoordinate(this._selectedGraphic.geometry, mapPointGcs);
         var snapPoint = snapObj.coordinate;
-        //this._snappingGraphicsLayer.clear();
+
         if (!this._snappingGraphicsLayer.graphics.length) {
           this._snappingGraphicsLayer.add(new Graphic(snapPoint));
         } else {
           this._snappingGraphicsLayer.graphics[0].geometry = snapPoint;
           this._snappingGraphicsLayer.redraw();
         }
-      },
-      _createPolyline: function(pt1, pt2) {
-        var pt1Cor = [pt1.x, pt1.y];
-        var pt2Cor = [pt2.x, pt2.y];
-        var lineJSON = {
-            paths: [[pt1Cor, pt2Cor]],
-            spatialReference: pt1.spatialReference
-        };
-        var polyline = new Polyline(lineJSON);
-        return polyline;
       },
       _addMouseClickHandler: function() {
         console.log('ADD map click');
@@ -316,28 +298,57 @@ define(
         var polys = [];
         for (var i = 0; i < polyline.paths.length; i++) {
           var path = polyline.paths[i];
-          var pathPoly = new Polyline(new SpatialReference(4326));
-          pathPoly.addPath(path);
+          var pathPoly = new Polyline({
+            paths: [path],
+            spatialReference: new SpatialReference(4326)
+          });
           polys.push(pathPoly);
         }
         return polys;
       },
-      // _cutPolyline: function(polyline) {
-      //   var crosses = geometryEngine.crosses(this._cutLine, polyline);
-      //   if (crosses) {
-      //     var cutPolylines = geometryEngine.cut(polyline, this._cutLine);
-      //
-      //     this._selectionLayer.clear();
-      //
-      //     var leftGraphic = new Graphic(cutPolylines[0], LEFT_CUT_SYMBOL);
-      //     var rightGraphic = new Graphic(cutPolylines[1], RIGHT_CUT_SYMBOL);
-      //     var untouchedGrahpic = new Graphic(cutPolylines[2], UNCUT_SYMBOL);
-      //
-      //     this._selectionLayer.add(leftGraphic);
-      //     //this._selectionLayer.add(rightGraphic);
-      //     this._selectionLayer.add(untouchedGrahpic);
-      //   }
-      // }
+      _groupPolylines: function(polylines) {
+        // This basically forms a dissolve by testing the polylinges to determine who touches who.
+        // it returns [ [polyline, polyline, ...], [polyline, polyline,...] ] where each array contains polylines that touch each other
+        // NOTE: This algorithm is O(n^3) which isn't great but the number of polylines will usually be pretty small
+        // and it's still better than sending to the server.
+        var groups = [];
+        for (var i = 0; i < polylines.length; i++) {
+          var polyline = polylines[i];
+          var inclusiveGroupIndexes = [];
+
+          for (var j = 0; j < groups.length; j++) {
+            var group = groups[j];
+
+            for (var k = 0; k < group.length; k++) {
+              var testPolyline = group[k];
+              // check if it intersects to see if they're touching
+              // NOTE: touches function does not return expected results
+              // NOTE: !disjoint profiles slightly faster than intersects
+              if (!geometryEngine.disjoint(polyline, testPolyline)) {
+                inclusiveGroupIndexes.push(j);
+                break;
+              }
+            }
+          }
+          if (inclusiveGroupIndexes.length === 0) {
+            groups.push([polyline]);
+          } else if (inclusiveGroupIndexes.length === 1) {
+            groups[inclusiveGroupIndexes[0]].push(polyline);
+          } else {
+            // if it belongs to multiple groups, then those groups should be joined.
+            // add to first group and then concat the groups
+            //TODO: this logic won't work if inclusiveGroupIndexes.length > 2
+            var firstInclusiveIndex = inclusiveGroupIndexes[0];
+            groups[firstInclusiveIndex].push(polyline);
+            for (var m = 1; m < inclusiveGroupIndexes.length; m++) {
+              var additionalInclusiveIndex = inclusiveGroupIndexes[m];
+              groups[firstInclusiveIndex] = groups[firstInclusiveIndex].concat(groups[additionalInclusiveIndex]);
+              groups.splice(additionalInclusiveIndex, 1);
+            }
+          }
+        }
+        return groups;
+      }
     });
   }
 );

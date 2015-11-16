@@ -1,0 +1,2 @@
+better colors for exploded lines
+after cut, discover if disjoint - break disjoint polylines into separate graphics

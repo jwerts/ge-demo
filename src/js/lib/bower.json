@@ -21,6 +21,7 @@
   "dependencies": {
     "turf": "~2.0.2",
     "terraformer": "~1.0.4",
-    "terraformer-arcgis-parser": "~1.0.4"
+    "terraformer-arcgis-parser": "~1.0.4",
+    "parallel.js": "paralleljs#*"
   }
 }

@@ -58,6 +58,7 @@ var dojoConfig = {
 <script src="js/lib/bower_components/terraformer/terraformer.min.js"></script>
 <script src="js/lib/bower_components/terraformer-arcgis-parser/terraformer-arcgis-parser.min.js"></script>
 <script src="js/lib/bower_components/turf/turf.min.js"></script>
+<script src="js/lib/bower_components/parallel.js/lib/parallel.js"></script>
 <script src="//js.arcgis.com/3.14/"></script>
 
 <script>
@@ -76,7 +77,9 @@ require(
   ], function(Map, Extent, SpatialReference, RouteEdit, dom, on) {
 
   //xmin, ymin, xmax, ymax
-  var initExtent = new Extent(-122.412636, 37.802260, -122.408795, 37.805083, new SpatialReference({wkid:4326}));
+  //var initExtent = new Extent(-122.412636, 37.802260, -122.408795, 37.805083, new SpatialReference({wkid:4326}));
+  var initExtent = new Extent(-121.416630, 38.878223, -121.141971, 39.222165, new SpatialReference({wkid:4326}));
+
 
   map = new Map("map", {
     basemap: "topo",
@@ -114,7 +117,7 @@ Q: How to determine what's "in between" the 2 points.
 
 <body>
   <div id="map">
-    <div class="mainStyle" id="results">
+    <div class="mainStyle" id="results" style="display:none;">
       <span id="instructions">Select a feature by clicking on it.</span><br><br>
       <button type="button" id="clearButton">Clear</button>
   </div>

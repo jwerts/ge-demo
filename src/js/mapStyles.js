@@ -130,24 +130,24 @@ define(
         return renderer;
       },
 
-      rampedColorLineRenderer: function(attributeField, values, width) {
-        var defaultSymbol = new SimpleLineSymbol(SimpleLineSymbol.STYLE_SOLID)
-          .setWidth(width)
-          .setColor('rgba(0, 150, 0, 0.9)');
-        var renderer = new UniqueValueRenderer(defaultSymbol, attributeField);
-        var minValue = Math.min.apply(Math, values);
-        var maxValue = Math.max.apply(Math, values);
-        renderer.setColorInfo({
-          field: attributeField,
-          minDataValue: minValue,
-          maxDataValue: maxValue,
-          colors: [
-            new Color([255, 0, 0, 0.9]), // RED
-            new Color([0, 0, 255, 0.9]) // BLUE
-          ]
-        });
-        return renderer;
-      },
+      // rampedColorLineRenderer: function(attributeField, values, width) {
+      //   var defaultSymbol = new SimpleLineSymbol(SimpleLineSymbol.STYLE_SOLID)
+      //     .setWidth(width)
+      //     .setColor('rgba(0, 150, 0, 0.9)');
+      //   var renderer = new UniqueValueRenderer(defaultSymbol, attributeField);
+      //   var minValue = Math.min.apply(Math, values);
+      //   var maxValue = Math.max.apply(Math, values);
+      //   renderer.setColorInfo({
+      //     field: attributeField,
+      //     minDataValue: minValue,
+      //     maxDataValue: maxValue,
+      //     colors: [
+      //       new Color([255, 0, 0, 0.9]), // RED
+      //       new Color([0, 255, 0, 0.9]) // GREEN
+      //     ]
+      //   });
+      //   return renderer;
+      // },
 
       getRouteCutPointsRenderer: function() {
         var defaultSymbol = new SimpleMarkerSymbol()
@@ -178,7 +178,12 @@ define(
       lateralVertexSymbol: new SimpleMarkerSymbol()
         .setStyle(SimpleMarkerSymbol.STYLE_CIRCLE)
         .setSize(10)
-        .setColor('rgba(79, 194, 84, 0.7)')
+        .setColor('rgba(79, 194, 84, 0.7)'),
+
+      cutPointSymbol: new SimpleMarkerSymbol()
+        .setStyle(SimpleMarkerSymbol.STYLE_CROSS)
+        .setSize(25)
+        .setColor('black')
 
     };
   }
