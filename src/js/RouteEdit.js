@@ -157,8 +157,8 @@ define(
         this._addExplodedPolylineClickHandler();
       },
       _onExplodedPolylineClicked: function(e) {
-        this._explodedPolylineLayer.setVisibility(false);
-        this._explodedPolylineLayer.redraw();
+        //this._explodedPolylineLayer.setVisibility(false);
+        //this._explodedPolylineLayer.redraw();
 
         this._selectedGraphic = new Graphic(e.graphic.toJson());
         this._selectionLayer.add(this._selectedGraphic);
@@ -168,11 +168,17 @@ define(
         this._addMapMouseSnapHandler();
         this._addMouseClickHandler();
 
+        // go ahead and make the point used to select the line the first click point.
+        this._snapAndCut(e.mapPoint);
+
         // prevent original click from immediatedly firing map click handler just added.
         e.stopPropagation();
       },
       _onMapClick: function(e) {
-        var clickPoint = webMercatorUtils.webMercatorToGeographic(e.mapPoint);
+        this._snapAndCut(e.mapPoint);
+      },
+      _snapAndCut: function(mapPoint) {
+        var clickPoint = webMercatorUtils.webMercatorToGeographic(mapPoint);
         this._mapClickCount++;
         var snapObj = geometryEngine.nearestCoordinate(this._selectedGraphic.geometry, clickPoint);
         var snapPoint = snapObj.coordinate;
@@ -189,6 +195,7 @@ define(
           var endPoint = this._cutPointGraphicsLayer.graphics[1].geometry;
           var slicedPolylineSegment = this._cutPolyline(startPoint, endPoint, routeGeographic);
 
+          this._explodedPolylineLayer.clear();
           this._snappingGraphicsLayer.clear();
           this._cutPointGraphicsLayer.clear();
 
