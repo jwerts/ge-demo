@@ -94,7 +94,6 @@ define(
 
         this._routeFeatureClickHandle = null;
         this._mapClickHandle = null;
-        this._mapMouseMoveHandle = null;
         this._mapMouseSnapHandle = null;
         this._explodedPolylineClickHandle = null;
 
@@ -104,12 +103,11 @@ define(
         this._cutLine = null;
       },
       enable: function() {
-        this._routeFeatureClickHandle = this._routesFeatureLayer.on('click', lang.hitch(this, this._onRouteFeatureClicked));
+        this._addRouteFeatureClickHandler();
       },
       clear: function() {
         this._removeMouseClickHandler();
-        this._removeMouseMoveHandler();
-        this._removeMouseSnapHandler();
+        this._removeMapMouseSnapHandler();
         this._removeExplodedPolylineClickHandler();
         this._removeRouteFeatureClickHandler();
 
@@ -129,8 +127,6 @@ define(
         this._cutterGraphicsLayer.clear();
         this._cutPointGraphicsLayer.clear();
         this._explodedPolylineLayer.clear();
-
-        this._disableSnappingToRoute();
       },
       _onRouteFeatureClicked: function(e) {
         console.log(e.graphic.geometry);
@@ -144,7 +140,10 @@ define(
 
         this._explodedPolylineLayer.clear();
         var ids = [];
-        var polylineGcs = webMercatorUtils.webMercatorToGeographic(e.graphic.geometry);
+        var polylineGcs = e.graphic.geometry;
+        if (polylineGcs.spatialReference.wkid !== 4326) {
+          polylineGcs = webMercatorUtils.webMercatorToGeographic(e.graphic.geometry);
+        }
         var pathPolys = this._explodePolyline(polylineGcs);
         for (var i = 0; i < pathPolys.length; i++) {
           var poly = pathPolys[i];
@@ -153,8 +152,9 @@ define(
           ids.push(i);
         }
         this._explodedPolylineLayer.setRenderer(mapStyles.rampedColorLineRenderer('pathIndex', ids, 5));
+        this._explodedPolylineLayer.show();
         this._explodedPolylineLayer.redraw();
-        this._explodedPolylineLayer.on('click', lang.hitch(this, this._onExplodedPolylineClicked));
+        this._addExplodedPolylineClickHandler();
       },
       _onExplodedPolylineClicked: function(e) {
         this._explodedPolylineLayer.setVisibility(false);
@@ -164,8 +164,9 @@ define(
         this._selectionLayer.add(this._selectedGraphic);
         this._selectionLayer.redraw();
 
-        this._mapMouseSnapHandle = this.map.on('mouse-move', lang.hitch(this, this._onMapMouseSnap));
-        this._mapClickHandle = this.map.on('click', lang.hitch(this, this._onMapClick));
+        this._removeExplodedPolylineClickHandler();
+        this._addMapMouseSnapHandler();
+        this._addMouseClickHandler();
 
         // prevent original click from immediatedly firing map click handler just added.
         e.stopPropagation();
@@ -180,7 +181,7 @@ define(
         this._cutPointGraphicsLayer.add(new Graphic(snapPoint));
 
         if (this._mapClickCount === 2) {
-          this._removeMouseSnapHandler();
+          this._removeMapMouseSnapHandler();
           this._removeMouseClickHandler();
 
           var routeGeographic = this._selectedGraphic.geometry;
@@ -209,13 +210,15 @@ define(
           var editedRouteGraphic = new Graphic(editedPolyline, null, {});
 
           this._routesFeatureLayer.remove(this._selectedOriginalGraphic);
+          editedRouteGraphic.geometry = webMercatorUtils.geographicToWebMercator(editedRouteGraphic.geometry);
           this._routesFeatureLayer.add(editedRouteGraphic);
           this._routesFeatureLayer.redraw();
 
           this._selectionLayer.clear();
 
           // restart process?
-          //this.enable();
+          this.clear();
+          this.enable();
         }
       },
       _cutPolyline: function(startPoint, endPoint, polyline) {
@@ -226,9 +229,6 @@ define(
         var cutter = turf.lineSlice(startGeoJson, endGeoJson, routeGeoJson);
         var cutterPolyline = new Polyline(new SpatialReference(4326));
         cutterPolyline.addPath(cutter.geometry.coordinates);
-        //var graphic = new Graphic(slicedPolyline);
-        //this._selectionLayer.add(graphic);
-        //console.log('graphic', graphic);
         var slicedPolyline = geometryEngine.difference(polyline, cutterPolyline);
         return slicedPolyline;
       },
@@ -261,55 +261,49 @@ define(
         var polyline = new Polyline(lineJSON);
         return polyline;
       },
+      _addMouseClickHandler: function() {
+        console.log('ADD map click');
+        this._mapClickHandle = this.map.on('click', lang.hitch(this, this._onMapClick));
+      },
       _removeMouseClickHandler: function() {
         if (this._mapClickHandle) {
+          console.log('REMOVE map click');
           this._mapClickHandle.remove();
           this._mapClickHandle = null;
         }
       },
-      _removeMouseMoveHandler: function() {
-        if (this._mapMouseMoveHandle) {
-          this._mapMouseMoveHandle.remove();
-          this._mapMouseMoveHandle = null;
-        }
+      _addMapMouseSnapHandler: function() {
+        console.log('ADD mouse move snap');
+        this._mapMouseSnapHandle = this.map.on('mouse-move', lang.hitch(this, this._onMapMouseSnap));
       },
-      _removeMouseSnapHandler: function() {
+      _removeMapMouseSnapHandler: function() {
         if (this._mapMouseSnapHandle) {
+          console.log('REMOVE mouse move snap');
           this._mapMouseSnapHandle.remove();
           this._mapMouseSnapHandle = null;
         }
       },
+      _addRouteFeatureClickHandler: function() {
+        console.log('ADD route feature click');
+        this._routeFeatureClickHandle = this._routesFeatureLayer.on('click', lang.hitch(this, this._onRouteFeatureClicked));
+      },
       _removeRouteFeatureClickHandler: function() {
+        console.log('REMOVE route feature click');
         if (this._routeFeatureClickHandle) {
           this._routeFeatureClickHandle.remove();
           this._routeFeatureClickHandle = null;
         }
       },
+      _addExplodedPolylineClickHandler: function() {
+        console.log('ADD exploded polyline click');
+        this._explodedPolylineClickHandle = this._explodedPolylineLayer.on('click', lang.hitch(this, this._onExplodedPolylineClicked));
+      },
       _removeExplodedPolylineClickHandler: function() {
         if (this._explodedPolylineClickHandle) {
+          console.log('REMOVE exploded polyline click');
           this._explodedPolylineClickHandle.remove();
           this._explodedPolylineClickHandle = null;
         }
-      },
-      _enableSnappingToRoute: function() {
-        // snap to existing route if close by
-        console.log('snapping enabled');
-        this.map.enableSnapping({
-          alwaysSnap: true,
-          tolerance: 10,
-          snapPointSymbol: mapStyles.lateralSnappingSymbol,
-          layerInfos: [{
-              layer: this._routesFeatureLayer,
-              snapToEdge: true,
-              snapToVertex: true,
-              snapToPoint: true
-            }
-          ]
-        });
-      },
-      _disableSnappingToRoute: function() {
-        console.log('snapping disabled');
-        this.map.disableSnapping();
       },
       _explodePolyline: function(polyline) {
         var polys = [];
