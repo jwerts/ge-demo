@@ -7,6 +7,7 @@
 
 var d_map;
 var d_routeFeatureLayer;
+var d_selectionLayer;
 
 define(
   [
@@ -75,6 +76,7 @@ define(
         this._selectionLayer = new GraphicsLayer();
         this._selectionLayer.setRenderer(new SimpleRenderer(selectionSym));
         this.map.addLayer(this._selectionLayer);
+        d_selectionLayer = this._selectionLayer;
 
         this._snappingGraphicsLayer = new GraphicsLayer();
         this._snappingGraphicsLayer.setRenderer(new SimpleRenderer(SNAPPING_SYMBOL));
@@ -142,14 +144,15 @@ define(
 
         this._explodedPolylineLayer.clear();
         var ids = [];
-        var pathPolys = this._explodePolyline(e.graphic.geometry);
+        var polylineGcs = webMercatorUtils.webMercatorToGeographic(e.graphic.geometry);
+        var pathPolys = this._explodePolyline(polylineGcs);
         for (var i = 0; i < pathPolys.length; i++) {
           var poly = pathPolys[i];
-          var graphic = new Graphic(poly, null, {'id': i});
+          var graphic = new Graphic(poly, null, {'pathIndex': i});
           this._explodedPolylineLayer.add(graphic);
           ids.push(i);
         }
-        this._explodedPolylineLayer.setRenderer(mapStyles.rampedColorLineRenderer('id', ids, 5));
+        this._explodedPolylineLayer.setRenderer(mapStyles.rampedColorLineRenderer('pathIndex', ids, 5));
         this._explodedPolylineLayer.redraw();
         this._explodedPolylineLayer.on('click', lang.hitch(this, this._onExplodedPolylineClicked));
       },
@@ -168,57 +171,52 @@ define(
         e.stopPropagation();
       },
       _onMapClick: function(e) {
-        var clickPoint = e.mapPoint;
+        var clickPoint = webMercatorUtils.webMercatorToGeographic(e.mapPoint);
         this._mapClickCount++;
-        //if (this._mapClickCount === 1) {
-          var snapObj = geometryEngine.nearestCoordinate(this._selectedGraphic.geometry, clickPoint);
-          var snapPoint = snapObj.coordinate;
-          console.log("distance", snapObj.distance);
-          this._cutLineStartPoint = snapPoint;
-          this._cutPointGraphicsLayer.add(new Graphic(snapPoint));
-          //this._cutLine = this._createPolyline(snapPoint, snapPoint);
-          //this._mapMouseMoveHandle = this.map.on("mouse-move", lang.hitch(this, this._onMouseMove));
-        //} else {
-        //  console.log('subsequent click');
-        //  this._removeMouseMoveHandler();
-        //}
+        var snapObj = geometryEngine.nearestCoordinate(this._selectedGraphic.geometry, clickPoint);
+        var snapPoint = snapObj.coordinate;
+        console.log("distance", snapObj.distance);
+        this._cutLineStartPoint = snapPoint;
+        this._cutPointGraphicsLayer.add(new Graphic(snapPoint));
+
         if (this._mapClickCount === 2) {
           this._removeMouseSnapHandler();
-          var routeGeographic = webMercatorUtils.webMercatorToGeographic(this._selectedGraphic.geometry);
-          var startPoint = webMercatorUtils.webMercatorToGeographic(this._cutPointGraphicsLayer.graphics[0].geometry);
-          var endPoint = webMercatorUtils.webMercatorToGeographic(this._cutPointGraphicsLayer.graphics[1].geometry);
+          this._removeMouseClickHandler();
 
-          // use VertexIndex??? Not sure how it relates to paths
-          // var cutPaths = [];
-          // for (var i=0; i<routeGeographic.paths.length; i++) {
-          //   var path = routeGeographic.paths[i];
-          //   var test = new Polyline(path, routeGeographic.spatialReference);
-          //   var startTouches = !geometryEngine.disjoint(startPoint, test);
-          //   var endTouches = !geometryEngine.disjoint(endPoint, test);
-          //   console.log("path", i);
-          //   console.log("startTouches", startTouches);
-          //   console.log("endTouches", endTouches);
-          //   cutPaths.push([startTouches, endTouches]);
-          // }
-          // console.log(cutPaths);
-          //
-          // this._selectionLayer.clear();
-          // for (var j = 0; j < cutPaths.length; j++) {
-          //   var startTouch = cutPaths[j][0];
-          //   var endTouch = cutPaths[j][1];
-          //   if (startTouch && endTouch) {
-          //     var poly = new Polyline(this._selectedGraphic.geometry.paths[j], this._selectedGraphic.geometry.spatialReference);
-          //     this._cutPolyline(startPoint, endPoint, poly);
-          //   }
-          // }
+          var routeGeographic = this._selectedGraphic.geometry;
+          var startPoint = this._cutPointGraphicsLayer.graphics[0].geometry;
+          var endPoint = this._cutPointGraphicsLayer.graphics[1].geometry;
+          var slicedPolylineSegment = this._cutPolyline(startPoint, endPoint, routeGeographic);
 
-            var slicedPolyline = this._cutPolyline(startPoint, endPoint, routeGeographic);
-            var slicedGraphic = new Graphic(slicedPolyline);
-            this._selectionLayer.clear();
-            this._selectionLayer.add(slicedGraphic);
+          this._snappingGraphicsLayer.clear();
+          this._cutPointGraphicsLayer.clear();
+
+          var editedPolyline = new Polyline(new SpatialReference(4326));
+
+          var originalPolylineGcs = webMercatorUtils.webMercatorToGeographic(this._selectedOriginalGraphic.geometry);
+          for (var i = 0; i < originalPolylineGcs.paths.length; i++) {
+            var oPath = originalPolylineGcs.paths[i];
+            if (i !== this._selectedGraphic.attributes.pathIndex) {
+              editedPolyline.addPath(oPath);
+            }
           }
 
-          //this.map.graphics.add(new Graphic(slicedPolyline, RIGHT_CUT_SYMBOL));
+          for (var j = 0; j < slicedPolylineSegment.paths.length; j++) {
+            var path = slicedPolylineSegment.paths[j];
+            editedPolyline.addPath(path);
+          }
+          //TODO: fill in attributes
+          var editedRouteGraphic = new Graphic(editedPolyline, null, {});
+
+          this._routesFeatureLayer.remove(this._selectedOriginalGraphic);
+          this._routesFeatureLayer.add(editedRouteGraphic);
+          this._routesFeatureLayer.redraw();
+
+          this._selectionLayer.clear();
+
+          // restart process?
+          //this.enable();
+        }
       },
       _cutPolyline: function(startPoint, endPoint, polyline) {
         //var selectedGeographic = webMercatorUtils.webMercatorToGeographic(polyline);
@@ -242,7 +240,8 @@ define(
         this._cutPolyline(this._selectedGraphic.geometry);
       },
       _onMapMouseSnap: function(e) {
-        var snapObj = geometryEngine.nearestCoordinate(this._selectedGraphic.geometry, e.mapPoint);
+        var mapPointGcs = webMercatorUtils.webMercatorToGeographic(e.mapPoint);
+        var snapObj = geometryEngine.nearestCoordinate(this._selectedGraphic.geometry, mapPointGcs);
         var snapPoint = snapObj.coordinate;
         //this._snappingGraphicsLayer.clear();
         if (!this._snappingGraphicsLayer.graphics.length) {
@@ -316,7 +315,7 @@ define(
         var polys = [];
         for (var i = 0; i < polyline.paths.length; i++) {
           var path = polyline.paths[i];
-          var pathPoly = new Polyline(polyline.spatialReference);
+          var pathPoly = new Polyline(new SpatialReference(4326));
           pathPoly.addPath(path);
           polys.push(pathPoly);
         }
