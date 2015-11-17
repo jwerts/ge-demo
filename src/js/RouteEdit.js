@@ -5,10 +5,6 @@
  * Copyright 2014 Patrick Engineering Inc. All rights reserved.
  */
 
-var d_map;
-var d_routeFeatureLayer;
-var d_selectionLayer;
-
 define(
   [
     "dojo/_base/declare",
@@ -32,7 +28,7 @@ define(
               geometryEngine, Polyline,
               SpatialReference, SimpleLineSymbol,
               Color, SimpleRenderer, GraphicsLayer,
-              routes, mapStyles, rendererFactory, array, webMercatorUtils) {
+              routesFeaturelayer, mapStyles, rendererFactory, array, webMercatorUtils) {
     "use strict";
 
     var SNAPPING_SYMBOL = mapStyles.cutPointSymbol;
@@ -40,24 +36,13 @@ define(
     return declare(Evented, {
       constructor: function(map) {
         this.map = map;
-        d_map = map;
 
         //Layer symbology
-        var routesym = new SimpleLineSymbol(SimpleLineSymbol.STYLE_SOLID, new Color("blue"), 5);
-        var selectionSym = new SimpleLineSymbol(SimpleLineSymbol.STYLE_SOLID, new Color("red"), 7);
-        var renderer = new SimpleRenderer(routesym);
-
-        //Get FeatureLayer created from FeatureCollection stored on the client through data/routes
-        this._routesFeatureLayer = routes;
+        var routeSymbol = new SimpleLineSymbol(SimpleLineSymbol.STYLE_SOLID, new Color("blue"), 5);
+        var renderer = new SimpleRenderer(routeSymbol);
+        this._routesFeatureLayer = routesFeaturelayer;
         this._routesFeatureLayer.setRenderer(renderer);
         this.map.addLayer(this._routesFeatureLayer);
-        d_routeFeatureLayer = this._routesFeatureLayer;
-
-        //Create selection layer to display selection symbol
-        this._selectionLayer = new GraphicsLayer();
-        this._selectionLayer.setRenderer(new SimpleRenderer(selectionSym));
-        this.map.addLayer(this._selectionLayer);
-        d_selectionLayer = this._selectionLayer;
 
         this._snappingGraphicsLayer = new GraphicsLayer();
         this._snappingGraphicsLayer.setRenderer(new SimpleRenderer(SNAPPING_SYMBOL));
@@ -103,7 +88,6 @@ define(
         this._cutLine = null;
         this._cutLineStartPoint = null;
 
-        this._selectionLayer.clear();
         this._cutPointGraphicsLayer.clear();
         this._explodedPolylineLayer.clear();
       },
@@ -137,10 +121,7 @@ define(
         this._addExplodedPolylineClickHandler();
       },
       _onExplodedPolylineClicked: function(e) {
-        this._selectedGraphic = new Graphic(e.graphic.toJson());
-        this._selectionLayer.add(this._selectedGraphic);
-        this._selectionLayer.redraw();
-
+        this._selectedGraphic = e.graphic;
         this._removeExplodedPolylineClickHandler();
         this._addMapMouseSnapHandler();
         this._addMouseClickHandler();
@@ -168,17 +149,15 @@ define(
           this._removeMouseClickHandler();
           this._explodedPolylineLayer.clear();
           this._snappingGraphicsLayer.clear();
-          this._selectionLayer.clear();
 
-          var routeGeographic = this._selectedGraphic.geometry;
           var startPoint = this._cutPointGraphicsLayer.graphics[0].geometry;
           var endPoint = clickPoint;
-          var slicedPolylineSegment = this._cutPolyline(startPoint, endPoint, routeGeographic);
+          var slicedPolylineSegment = this._cutPolyline(startPoint, endPoint, this._selectedGraphic.geometry);
 
           this._routesFeatureLayer.remove(this._selectedOriginalGraphic);
           var editedPolyline = this._spliceInCutSegment(this._selectedOriginalGraphic.geometry,
             this._selectedGraphic.attributes.pathIndex, slicedPolylineSegment);
-          var editedPolylineSections = this._divideEditedPolyline(editedPolyline);
+          var editedPolylineSections = this._multiPartToSinglePart(editedPolyline);
 
           for (var i = 0; i < editedPolylineSections.length; i++) {
             var section = editedPolylineSections[i];
@@ -196,7 +175,11 @@ define(
         }
       },
       _cutPolyline: function(startPoint, endPoint, polyline) {
-        // expects all inputs in wgs 84
+        // cuts out portion of polyline between startPoint and endPoint
+        // and returns new multi part polyline.
+        // expects all inputs in wgs 84.
+        // slicing functionality was not available in esri geometryEngine so we make use
+        // of Terraformer (convert to geojson) and turfjs (spatial operation).
         var routeGeoJson = new Terraformer.Feature(Terraformer.ArcGIS.parse(polyline));
         var startGeoJson = new Terraformer.Feature(Terraformer.ArcGIS.parse(startPoint));
         var endGeoJson = new Terraformer.Feature(Terraformer.ArcGIS.parse(endPoint));
@@ -209,6 +192,8 @@ define(
         return slicedPolyline;
       },
       _spliceInCutSegment: function(originalPolyline, cutPathIndex, slicedPolyline) {
+        // replaces the original segment of polyline that was edited with the
+        // cut segments.
         var editedPolyline = new Polyline(new SpatialReference(4326));
 
         var originalPolylineGcs = originalPolyline;
@@ -228,8 +213,9 @@ define(
         }
         return editedPolyline;
       },
-      _divideEditedPolyline: function(editedPolyline) {
-        var groups = this._groupPolylines(this._explodePolyline(editedPolyline));
+      _multiPartToSinglePart: function(polyline) {
+        // returns an array of disjoint polylines from a multipart polyline
+        var groups = this._groupPolylines(this._explodePolyline(polyline));
 
         var polylineSegments = [];
         for (var k = 0; k < groups.length; k++) {
@@ -239,6 +225,7 @@ define(
         return polylineSegments;
       },
       _onMapMouseSnap: function(e) {
+        // show point on line where mouse cursor snaps to line
         var mapPointGcs = webMercatorUtils.webMercatorToGeographic(e.mapPoint);
         var snapObj = geometryEngine.nearestCoordinate(this._selectedGraphic.geometry, mapPointGcs);
         var snapPoint = snapObj.coordinate;
@@ -250,51 +237,9 @@ define(
           this._snappingGraphicsLayer.redraw();
         }
       },
-      _addMouseClickHandler: function() {
-        console.log('ADD map click');
-        this._mapClickHandle = this.map.on('click', lang.hitch(this, this._onMapClick));
-      },
-      _removeMouseClickHandler: function() {
-        if (this._mapClickHandle) {
-          console.log('REMOVE map click');
-          this._mapClickHandle.remove();
-          this._mapClickHandle = null;
-        }
-      },
-      _addMapMouseSnapHandler: function() {
-        console.log('ADD mouse move snap');
-        this._mapMouseSnapHandle = this.map.on('mouse-move', lang.hitch(this, this._onMapMouseSnap));
-      },
-      _removeMapMouseSnapHandler: function() {
-        if (this._mapMouseSnapHandle) {
-          console.log('REMOVE mouse move snap');
-          this._mapMouseSnapHandle.remove();
-          this._mapMouseSnapHandle = null;
-        }
-      },
-      _addRouteFeatureClickHandler: function() {
-        console.log('ADD route feature click');
-        this._routeFeatureClickHandle = this._routesFeatureLayer.on('click', lang.hitch(this, this._onRouteFeatureClicked));
-      },
-      _removeRouteFeatureClickHandler: function() {
-        console.log('REMOVE route feature click');
-        if (this._routeFeatureClickHandle) {
-          this._routeFeatureClickHandle.remove();
-          this._routeFeatureClickHandle = null;
-        }
-      },
-      _addExplodedPolylineClickHandler: function() {
-        console.log('ADD exploded polyline click');
-        this._explodedPolylineClickHandle = this._explodedPolylineLayer.on('click', lang.hitch(this, this._onExplodedPolylineClicked));
-      },
-      _removeExplodedPolylineClickHandler: function() {
-        if (this._explodedPolylineClickHandle) {
-          console.log('REMOVE exploded polyline click');
-          this._explodedPolylineClickHandle.remove();
-          this._explodedPolylineClickHandle = null;
-        }
-      },
       _explodePolyline: function(polyline) {
+        // explodes multi-path polyline into array of polylines
+        // with one path each.
         var polys = [];
         for (var i = 0; i < polyline.paths.length; i++) {
           var path = polyline.paths[i];
@@ -348,7 +293,51 @@ define(
           }
         }
         return groups;
-      }
+      },
+      _addMouseClickHandler: function() {
+        console.log('ADD map click');
+        this._mapClickHandle = this.map.on('click', lang.hitch(this, this._onMapClick));
+      },
+      _removeMouseClickHandler: function() {
+        if (this._mapClickHandle) {
+          console.log('REMOVE map click');
+          this._mapClickHandle.remove();
+          this._mapClickHandle = null;
+        }
+      },
+      _addMapMouseSnapHandler: function() {
+        console.log('ADD mouse move snap');
+        this._mapMouseSnapHandle = this.map.on('mouse-move', lang.hitch(this, this._onMapMouseSnap));
+      },
+      _removeMapMouseSnapHandler: function() {
+        if (this._mapMouseSnapHandle) {
+          console.log('REMOVE mouse move snap');
+          this._mapMouseSnapHandle.remove();
+          this._mapMouseSnapHandle = null;
+        }
+      },
+      _addRouteFeatureClickHandler: function() {
+        console.log('ADD route feature click');
+        this._routeFeatureClickHandle = this._routesFeatureLayer.on('click', lang.hitch(this, this._onRouteFeatureClicked));
+      },
+      _removeRouteFeatureClickHandler: function() {
+        console.log('REMOVE route feature click');
+        if (this._routeFeatureClickHandle) {
+          this._routeFeatureClickHandle.remove();
+          this._routeFeatureClickHandle = null;
+        }
+      },
+      _addExplodedPolylineClickHandler: function() {
+        console.log('ADD exploded polyline click');
+        this._explodedPolylineClickHandle = this._explodedPolylineLayer.on('click', lang.hitch(this, this._onExplodedPolylineClicked));
+      },
+      _removeExplodedPolylineClickHandler: function() {
+        if (this._explodedPolylineClickHandle) {
+          console.log('REMOVE exploded polyline click');
+          this._explodedPolylineClickHandle.remove();
+          this._explodedPolylineClickHandle = null;
+        }
+      },
     });
   }
 );
